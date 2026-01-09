@@ -1,4 +1,4 @@
-### A Step FOrward TOwards Risk Aware Facial Retrieval
+### A Step Forward Towards Risk Aware Facial Retrieval
 Muhammad Emmad Siddiqui, Muhammad Rafi
 
 ![pic](./Pipeline.png)
