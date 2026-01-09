@@ -1,3 +1,4 @@
+# Loss functional utilities for RA-FR
 import torch
 from torch.distributions.normal import Normal
 
