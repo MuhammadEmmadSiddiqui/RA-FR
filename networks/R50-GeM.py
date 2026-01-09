@@ -39,7 +39,7 @@ def reparametrize_trick(mu, sigma):
 
 
 class Model(nn.Module):
-    def __init__(self, mu_dim=2048, sigma_dim=1, sigma_init=1e-3, dropout_rate=0.1, setting='btl'):                   # setting='btl(bayesian_triplet)', 'dul(removed)', 'mcd(mc_dropout)'
+    def __init__(self, mu_dim=2048, sigma_dim=1, sigma_init=1e-3, dropout_rate=0.1, setting='btl'):                   # setting='btl(btl)', 'dul(triplet+kl)', 'mcd(triplet)', 'triplet(triplet)'
         super().__init__()
         self.setting = setting
         self.mu_dim =mu_dim
@@ -81,9 +81,10 @@ class Model(nn.Module):
             )
             self.sigma_head[-2].weight.data.zero_()
             self.sigma_head[-2].bias.data.copy_(torch.log(torch.tensor(sigma_init)))                          # NOTE: log?
-        elif self.setting in ['mcd']:
+        elif self.setting in ['mcd', 'triplet']:
             self.sigma_head = None
-            for module in self.backbone.modules():
+            if self.setting in ['mcd']:
+                for module in self.backbone.modules():
                     if isinstance(module, nn.Conv2d):
                         module.register_forward_hook(lambda m, inp, out: F.dropout(
                             out,
@@ -101,7 +102,7 @@ class Model(nn.Module):
                 return mu, sigma
             elif self.setting == 'dul':
                 return reparametrize_trick(mu, sigma), [mu, sigma]
-        elif self.setting in ['mcd']:
+        elif self.setting in ['mcd', 'triplet']:
             return mu, torch.zeros((mu.shape[0], self.sigma_dim), device=mu.device)
 
 

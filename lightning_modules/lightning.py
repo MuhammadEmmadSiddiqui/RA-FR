@@ -18,8 +18,8 @@ from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
 import wandb
-from losses.loss import BayesianTripletLoss, TripletLoss
-from networks.network import Model
+from losses.loss import BayesianTripletLoss
+from networks import get_model
 from utils import utils
 
 plt.style.use('ggplot')
@@ -68,7 +68,12 @@ class MetricLearningModule(pl.LightningModule):
         super().__init__()
         self.embedding_dim = cfg.train.embedding_dim
         self.variance_dim = cfg.train.get('variance_dim')
-        self.model = Model(
+        
+        # Get architecture from config, default to R50-GeM for backward compatibility
+        arch = cfg.train.get('arch', 'R50-GeM')
+        
+        self.model = get_model(
+            arch=arch,
             setting=cfg.train.setting,
             mu_dim=self.embedding_dim,
             sigma_dim=self.variance_dim,
@@ -100,10 +105,10 @@ class MetricLearningModule(pl.LightningModule):
         self.variance_all = None
         self.gt_all = None
 
-        if self.loss == 'triplet':
-            self.criterion = nn.TripletMarginLoss(margin=self.margin, p=2, reduction='sum')
-        elif self.loss == 'bayesian_triplet':
+        if self.loss == 'bayesian_triplet':
             self.criterion = BayesianTripletLoss(margin=0, varPrior=1 / 2047.0)                    # 0.00004885
+        elif self.loss == 'mc_dropout':
+            self.criterion = nn.TripletMarginLoss(margin=self.margin, p=2, reduction='sum')
 
     def configure_optimizers(self):
         # optimizer = optim.Adam(self.parameters(), lr=1e-3)
@@ -145,24 +150,7 @@ class MetricLearningModule(pl.LightningModule):
                 dicts_to_log['sigma_sq/min'] = torch.min(variances).item()
 
         tuple_loss = 0
-        if self.loss == 'triplet':
-            embs_a, embs_p, embs_n = torch.split(embs, [B, B, n_neg])
-            for i, neg_count in enumerate(neg_counts):
-                for n in range(neg_count):
-                    negIx = (torch.sum(neg_counts[:i]) + n).item()
-                    tuple_loss += self.criterion(embs_a[i:i + 1], embs_p[i:i + 1], embs_n[negIx:negIx + 1])
-            tuple_loss /= n_neg.float()          # normalise by actual number of negatives
-            if self.setting == 'dul':
-                def kl_divergence(mu, sigma2):
-                    logsigma2 = sigma2.log()
-                    kl = -(1 + logsigma2 - mu.pow(2) - sigma2) / 2
-                    kl = kl.sum(dim=1).mean()
-                    return kl
-
-                mu, sigma2 = variances
-                kl_loss = kl_divergence(mu, sigma2)
-                tuple_loss = tuple_loss + self.lambda_kl * kl_loss
-        elif self.loss == 'bayesian_triplet':
+        if self.loss == 'bayesian_triplet':
             embs = torch.cat((embs, variances), dim=-1)
             embs_a, embs_p, embs_n = torch.split(embs, [B, B, n_neg])
             for i, neg_count in enumerate(neg_counts):
@@ -174,6 +162,13 @@ class MetricLearningModule(pl.LightningModule):
                 label = torch.cat((torch.tensor([-1, 1]), torch.zeros((neg_count, ))))
                 tuple_loss += self.criterion(x, label)
             tuple_loss /= B                                                                        # NOTE divide by batch size
+        elif self.loss == 'mc_dropout':
+            embs_a, embs_p, embs_n = torch.split(embs, [B, B, n_neg])
+            for i, neg_count in enumerate(neg_counts):
+                for n in range(neg_count):
+                    negIx = (torch.sum(neg_counts[:i]) + n).item()
+                    tuple_loss += self.criterion(embs_a[i:i + 1], embs_p[i:i + 1], embs_n[negIx:negIx + 1])
+            tuple_loss /= n_neg.float()          # normalise by actual number of negatives
 
         self.log_dict(dicts_to_log, on_step=True, on_epoch=False, prog_bar=False, logger=True, batch_size=self.batch_size)
         self.log('train_loss', tuple_loss.item(), on_step=True, on_epoch=True, prog_bar=False, logger=True, batch_size=self.batch_size)
@@ -182,7 +177,7 @@ class MetricLearningModule(pl.LightningModule):
 
     def eval_step_common(self, batch, batch_idx):
         inputs, indices = batch
-        if self.setting in ['btl', 'dul', 'triplet']:
+        if self.setting in ['btl', 'dul']:
             mu, variance = self.model(inputs)                                                      # (B, D)
             if self.setting in ['dul']:
                 variance = variance[1]
@@ -206,7 +201,7 @@ class MetricLearningModule(pl.LightningModule):
 
 
     def compute_metrics(self):
-        if self.dataset in ['cub200', 'car196', 'chestx', 'sop']:
+        if self.dataset in ['imfdb']:
             q_mu = self.mu_all.cpu().numpy()
             db_mu = self.mu_all.cpu().numpy()
             q_variance = self.variance_all.cpu().numpy()
@@ -215,7 +210,7 @@ class MetricLearningModule(pl.LightningModule):
             dists, preds = utils.find_nn(q_mu, db_mu, max(self.eval_k_list) + 1)
             dists = dists[:, 1:]                                                                   # -1: to exclude query itself
             preds = preds[:, 1:]                                                                   # -1: to exclude query itself
-        elif self.dataset in ['pitts']:
+        else:  # pitts dataset removed, should not reach here
             if self.trainer.state.stage in ['validate', 'sanity_check']:
                 numDb = self.trainer.datamodule.whole_val_set.dbStruct.numDb
             elif self.trainer.state.stage == 'test':

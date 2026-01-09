@@ -1,6 +1,6 @@
 defaults:
   - train: btl 
-  - dataset: cub200
+  - dataset: imfdb
   - test:
   - _self_
 #   - override hydra/hydra_logging: disabled  

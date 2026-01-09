@@ -32,8 +32,8 @@ np.set_printoptions(precision=3, suppress=True)
 plt.style.use('ggplot')
 
 parser = argparse.ArgumentParser(description="Options")
-parser.add_argument('--dbs', type=str, default='cub200', help='choose dataset', choices=['pitts', 'cub200', 'car196', 'chestx', 'sop'])
-parser.add_argument('--unc', type=str, default='btl', help='choose method', choices=['triplet', 'btl', 'mcd', 'ensemble', 'random'])
+parser.add_argument('--dbs', type=str, default='imfdb', help='choose dataset', choices=['imfdb'])
+parser.add_argument('--unc', type=str, default='btl', help='choose method', choices=['btl', 'mcd', 'ensemble', 'random'])
 parser.add_argument('--cnt', type=int, default=0, help='set seed')
 parser.add_argument('--basic', action='store_true')                                                # basic: Risk with different alpha and fixed delta
 parser.add_argument('--delta', action='store_true')                                                # delta: Risk with different alpha and different delta
@@ -48,15 +48,15 @@ opts = parser.parse_args()
 
 hyps = {'dbs': None, 'unc': None}
 if sys.argv == ['']:
-    hyps['dbs'] = 'cub200'                       # 'cub200' | 'car196' | 'pitts'| 'chestx' | 'sop'
-    hyps['unc'] = 'btl'                          # 'btl' | 'triplet' | 'mcd' | 'ensemble'|
+    hyps['dbs'] = 'imfdb'
+    hyps['unc'] = 'btl'                          # 'btl' | 'mcd' | 'ensemble'|
 else:
-    hyps['dbs'] = opts.dbs                       # 'cub200' | 'car196' | 'pitts'| 'chestx'
+    hyps['dbs'] = opts.dbs
     hyps['unc'] = opts.unc                       # 'btl' | 'dul' | 'mcd' | 'ensemble'|
 
 print(f"{list(hyps.values())}")
 def get_resume(dbs, unc):
-    dicts = pd.read_json('baselines_beta.json')
+    dicts = pd.read_json('baselines.json')
     logs_dir = dicts['logs_dir'][0]
     if unc == 'ensemble':
         exp_folder = []
@@ -64,14 +64,14 @@ def get_resume(dbs, unc):
         hparams_file = []
         for i in range(len(dicts[dbs][unc])):
             exp_folder = join(logs_dir, dicts[dbs][unc][i])
-            resume_folder.append(glob(join(exp_folder, 'RCIR','*', 'checkpoints'))[0])
+            resume_folder.append(glob(join(exp_folder, 'RAFR','*', 'checkpoints'))[0])
             hparams_file.append(glob(join(exp_folder, 'train_csv', '*', 'hparams.yaml'))[0])
         with open(hparams_file[0]) as f:
             cfg = edict(yaml.load(f, Loader=yaml.FullLoader))
 
-    elif unc in ['btl', 'mcd', 'triplet']:
+    elif unc in ['btl', 'mcd']:
         exp_folder = join(logs_dir, dicts[dbs][unc])
-        resume_folder = glob(join(exp_folder, 'RCIR','*', 'checkpoints'))[0]
+        resume_folder = glob(join(exp_folder, 'RAFR','*', 'checkpoints'))[0]
         hparams_file = glob(join(exp_folder, 'train_csv', '*', 'hparams.yaml'))[0]
         with open(hparams_file) as f:
             cfg = edict(yaml.load(f, Loader=yaml.FullLoader))
@@ -86,7 +86,7 @@ worker_seed = opts.cnt
 np.random.seed(worker_seed)
 random.seed(worker_seed)
 
-OUTPUT_DIR = f"figures/rcir/{hyps['unc']}"
+OUTPUT_DIR = f"figures/rafr/{hyps['unc']}"
 if opts.heu_unc:
     OUTPUT_DIR += '_heu'
 if opts.qua or opts.bound:
@@ -103,7 +103,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 #%%
 
 # Load embeddings/predictions
-if hyps['dbs'] in ['pitts']:
+if False:  # pitts dataset removed
     split_method = 'on_test' # 'on_test' | 'seperate'
     # whole_val_set = dataset.Whole('val', data_path=cfg.dataset.data_path)
     # whole_test_set = dataset.Whole('test', data_path=cfg.dataset.data_path)
@@ -130,7 +130,7 @@ if hyps['dbs'] in ['pitts']:
         db_mu_test = db_mu_list.mean(axis=0)
         q_sigma_test = q_mu_list.var(axis=0)
         db_sigma_test = db_mu_list.var(axis=0)
-    elif hyps['unc'] in ['btl', 'mcd', 'triplet']:
+    elif hyps['unc'] in ['mcd', 'btl']:
         # TEST =============================== #
         with open(join(resume, 'embeddings_test.pickle'), 'rb') as handle:
             q_mu_test = pickle.load(handle)
@@ -202,7 +202,7 @@ if hyps['dbs'] in ['pitts']:
         print(f'recall on TEST (len={q_mu_test.shape[0]}):', recall_at_k)
 
 
-elif hyps['dbs'] in ['car196', 'cub200', 'chestx', 'sop']:
+elif hyps['dbs'] in ['imfdb']:
 
     '''
     1. Restore pretrained model paratmeters
@@ -227,7 +227,7 @@ elif hyps['dbs'] in ['car196', 'cub200', 'chestx', 'sop']:
         db_mu = db_mu_list.mean(axis=0)
         q_variance = q_mu_list.var(axis=0)
         db_variance = db_mu_list.var(axis=0)
-    elif hyps['unc'] in ['mcd', 'btl', 'triplet']:
+    elif hyps['unc'] in ['mcd', 'btl']:
         with open(join(resume, f'embeddings_test.pickle'), 'rb') as handle:
             q_mu = pickle.load(handle)
             db_mu = pickle.load(handle)
@@ -258,21 +258,15 @@ elif hyps['dbs'] in ['car196', 'cub200', 'chestx', 'sop']:
     q_sigma_cal, q_sigma_test = q_sigma_sq[idx, :], q_sigma_sq[~idx, :]
     db_sigma_cal, db_sigma_test = db_sigma_sq[idx, :], db_sigma_sq[~idx, :]
 
-    if hyps['dbs'] in ['sop']:
-        n_values = [1, 10, 50, 100, 150, 200, 250]
-    elif hyps['dbs'] in ['cub200']:
+    if hyps['dbs'] in ['imfdb']:
         n_values = [1, 5, 10, 20, 30, 40, 50, 60, 70]
-    elif hyps['dbs'] in ['car196', 'chestx']:
-        n_values = [1, 5, 10, 20, 30, 40, 50]
 
     print(n_values)
     # Check recall
     positives_cal = []
     for i, label in enumerate(labels_cal):
-        if hyps['dbs'] in ['car196', 'cub200', 'sop']:
+        if hyps['dbs'] in ['imfdb']:
             positive = np.where(labels_cal == label)[0]                                                # find same-label samples
-        elif hyps['dbs'] == 'chestx':
-            positive = np.where(labels_cal & label)[0]                                                 # find same-label samples
         positive = np.delete(positive, np.where(positive == i)[0])                                     # delete self
         positives_cal.append(positive)
     dists_cal, preds_cal = utils.find_nn(q_mu_cal, db_mu_cal, max(n_values) + 1)
@@ -285,10 +279,8 @@ elif hyps['dbs'] in ['car196', 'cub200', 'chestx', 'sop']:
 
     positives_test = []
     for i, label in enumerate(labels_test):
-        if hyps['dbs'] in ['car196', 'cub200', 'sop']:
+        if hyps['dbs'] in ['imfdb']:
             positive = np.where(labels_test == label)[0]                                               # find same-label samples
-        elif hyps['dbs'] == 'chestx':
-            positive = np.where(labels_test & label)[0]                                                # find same-label samples
         positive = np.delete(positive, np.where(positive == i)[0])                                     # delete self
         positives_test.append(positive)
     dists_test, preds_test = utils.find_nn(q_mu_test, db_mu_test, max(n_values) + 1)                   # +1 because query itself occupies a position                    # (N, n), (N, n) the results is sorted
@@ -312,7 +304,7 @@ if opts.tsne == True:
 
 #%%
 
-# RCIR
+# RAFR
 def parallel_evaluate(func, args):
     with Pool(processes=128) as pool:
         async_result = pool.starmap(func, args)
@@ -427,7 +419,7 @@ with open("rcir_paras.yaml", 'r') as stream:
 
 #%%
 
-if hyps['unc'] == 'triplet':
+if False:  # triplet removed
     recall_k = cal_recall(preds_test, positives_test, np.arange(1, 30, 1)) / 100.0
     np.save(os.path.join(OUTPUT_DIR, f'recall_k_{hyps["dbs"]}_{opts.cnt}.npy'), recall_k)
 

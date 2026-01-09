@@ -7,7 +7,6 @@ import torch.utils.data as data
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torchvision.transforms as T
-from scipy.io import loadmat
 
 
 def collate_fn(batch):
@@ -41,7 +40,23 @@ def collate_fn(batch):
 
 
 class Base(data.Dataset):
-    def __init__(self, split='train', data_path='', aug=True) -> None:
+    """
+    SCFace Dataset Base Class
+    
+    Expects preprocessed SCFace data structure:
+    dbs/SCFace/
+        ├── images/
+        │   ├── PersonID_1/
+        │   │   ├── cam1_img1.jpg
+        │   │   └── cam2_img1.jpg
+        │   └── PersonID_2/
+        │       └── cam1_img1.jpg
+        ├── image_class_labels.txt (format: <image_id> <person_id>)
+        └── images.txt (format: <image_id> <relative_path>)
+    """
+    def __init__(self, split='test', data_path='', aug=False) -> None:
+        # SCFace is primarily used for testing/evaluation (no training split)
+        # Default aug=False since SCFace is for evaluation
         if aug:
             self.input_transform = T.Compose([
                 T.ToTensor(),
@@ -55,34 +70,53 @@ class Base(data.Dataset):
                 T.ToTensor(),
                 T.Resize((224, 224), interpolation=T.InterpolationMode.NEAREST),
             ])
-        train_mat = loadmat(join(data_path, 'devkit/cars_train_annos.mat'))
-        train_lables = np.array([train_mat['annotations']['class'][0][i].item() for i in range(len(train_mat['annotations']['class'][0]))])
-        train_images = np.array([join(data_path, f"cars_train/{train_mat['annotations']['fname'][0][i].item()}") for i in range(len(train_mat['annotations']['fname'][0]))])
 
-        test_mat = loadmat(join(data_path, 'devkit/cars_test_annos_withlabels.mat'))
-        test_lables = np.array([test_mat['annotations']['class'][0][i].item() for i in range(len(test_mat['annotations']['class'][0]))])
-        test_images = np.array([join(data_path, f"cars_test/{test_mat['annotations']['fname'][0][i].item()}") for i in range(len(test_mat['annotations']['fname'][0]))])
+        self.dataset_dir = join(data_path, 'images')
 
-        labels = np.concatenate((train_lables, test_lables))
-        images = np.concatenate((train_images, test_images))
+        # get label
+        image_label = []
+        with open(join(data_path, "image_class_labels.txt"), 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                label = int(line.split(' ')[1].strip())
+                image_label.append(label)
+        image_label = np.array(image_label)
 
-        # get split indices
+        # SCFace split logic: typically all data is used for testing
+        # Can be modified based on specific experimental setup
         if split == 'train':
-            selected_indices = np.where(labels <= 98)[0]
+            # If training split needed, use a subset
+            # Example: first 80% of persons for training
+            unique_labels = np.unique(image_label)
+            train_labels = unique_labels[:int(0.8 * len(unique_labels))]
+            selected_indices = np.where(np.isin(image_label, train_labels))[0]
         elif split == 'val':
-            selected_indices = np.where(labels > 98)[0]
+            # Use remaining 20% for validation
+            unique_labels = np.unique(image_label)
+            val_labels = unique_labels[int(0.8 * len(unique_labels)):]
+            selected_indices = np.where(np.isin(image_label, val_labels))[0]
         elif split == 'test':
-            selected_indices = np.where(labels > 98)[0]
+            # Use all data for testing (typical SCFace usage)
+            selected_indices = np.arange(len(image_label))
         else:
             raise NameError('undefined split')
 
-        self.image_label = labels[selected_indices]
-        self.image_list = images[selected_indices]
+        self.image_label = image_label[selected_indices]
+
+        # get image list
+        image_list = []
+        with open(join(data_path, "images.txt"), 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                img_path = line.split(' ')[1].strip()
+                image_list.append(img_path)
+        image_list = np.array(image_list)
+        self.image_list = image_list[selected_indices]
 
     def load_image(self, index):
-        filepath = self.image_list[index]
+        filepath = join(self.dataset_dir, self.image_list[index])
         img = Image.open(filepath)
-        if img.layers != 3:                      # some sample are greyscale images, which we should convert it to RGB by duplicating channels
+        if img.mode != 'RGB':                      # some samples are greyscale images, convert to RGB
             img = img.convert("RGB")
         if self.input_transform:
             img = self.input_transform(img)
@@ -90,11 +124,9 @@ class Base(data.Dataset):
 
 
 class Whole(Base):
-    def __init__(self, split='train', data_path='', aug=True, return_label=False) -> None:
+    def __init__(self, split='test', data_path='', aug=False, return_label=False) -> None:
         super().__init__(split=split, data_path=data_path, aug=aug)
-
         self.return_label = return_label
-
         # get positives
         self.positives = []
         for i, label in enumerate(self.image_label):
@@ -106,9 +138,9 @@ class Whole(Base):
         return len(self.image_list)
 
     def load_image(self, index):
-        filepath = self.image_list[index]
+        filepath = join(self.dataset_dir, self.image_list[index])
         img = Image.open(filepath)
-        if img.layers != 3:                      # some sample are greyscale images, which we should convert it to RGB by duplicating channels
+        if img.mode != 'RGB':                      # some samples are greyscale images, convert to RGB
             img = img.convert("RGB")
         if self.input_transform:
             img = self.input_transform(img)
@@ -127,7 +159,11 @@ class Whole(Base):
 
 
 class Tuple(Base):
-    def __init__(self, split='train', data_path='', margin=0.5, aug=True) -> None:
+    """
+    Tuple dataset for SCFace - primarily for evaluation with triplet-based methods
+    Note: SCFace is typically used for evaluation only, not training
+    """
+    def __init__(self, split='test', data_path='', margin=0.5, aug=False) -> None:
         super().__init__(split=split, data_path=data_path, aug=aug)
 
         self.margin = margin
@@ -149,15 +185,14 @@ class Tuple(Base):
 
         self.n_neg = 5
         self.cache = None                        # NOTE: assign a CPU tensor instead of a CUDA tensor to self.cache
-        # self.cache = torch.zeros((len(self.image_label), 16))                                       # (N,D) dimension=16
 
     def __len__(self):
         return len(self.image_list)
 
     def load_image(self, index):
-        filepath = self.image_list[index]
+        filepath = join(self.dataset_dir, self.image_list[index])
         img = Image.open(filepath)
-        if img.layers != 3:                      # some sample are greyscale images, which we should convert it to RGB by duplicating channels
+        if img.mode != 'RGB':                  # some samples are greyscale images, convert to RGB
             img = img.convert("RGB")
         if self.input_transform:
             img = self.input_transform(img)
@@ -165,25 +200,23 @@ class Tuple(Base):
 
     def __getitem__(self, index):
 
-        # minig the closest positive
+        # mining the closest positive
         p_indices = self.positives[index]
-        # p_indices = np.random.choice(self.positives[index], int(0.5 * len(self.positives[index])), replace=False)
         a_emd = self.cache[index]                                                                  # (1,D)
         p_emd = self.cache[p_indices]                                                              # (Np, D)
         dist = torch.norm(a_emd - p_emd, dim=1, p=None)                                            # Np
-        d_p, inds_p = dist.topk(1, largest=False)                                                  # choose the closet positive NOTE: choose the farthest positive?
+        d_p, inds_p = dist.topk(1, largest=False)                                                  # choose the closest positive
         index_p = self.positives[index][inds_p].item()
 
-        # mining the closet negative
+        # mining the closest negative
         n_indices = self.negatives[index]
-        # n_indices = np.random.choice(self.negatives[index], self.n_negative_subset)                # randomly choose potential_negatives
         n_emd = self.cache[n_indices]                                                              # (Np, D)
         dist = torch.norm(a_emd - n_emd, dim=1, p=None)                                            # Np
-        d_n, inds_n = dist.topk(self.n_neg * 100, largest=False)                                   # choose the closet negative
+        d_n, inds_n = dist.topk(self.n_neg * 100, largest=False)                                   # choose the closest negative
         violating_indices = d_n < d_p + self.margin                                                # [True, True, ...] tensor
         if torch.sum(violating_indices) < 1:
             return None
-        inds_n_vio = inds_n[violating_indices][:self.n_neg].numpy()                                # tensor -> numpy: a[tensor(5)] = 1, a[numpy(5)]=array([1])
+        inds_n_vio = inds_n[violating_indices][:self.n_neg].numpy()                                # tensor -> numpy
         index_n = n_indices[inds_n_vio]
 
         # load images
@@ -198,10 +231,11 @@ class Tuple(Base):
         return self.positives
 
 
-#%%
-
 if __name__ == '__main__':
-    whole_train_set = Whole('train', data_path='dbs/CAR196', aug=True, return_label=True)
-    whole_val_set = Whole('val', data_path='dbs/CAR196', aug=False, return_label=True)
-    whole_test_set = Whole('test', data_path='dbs/CAR196', aug=False, return_label=True)
-    print(f"length Test: {len(whole_test_set)}, cal: {int(0.2*len(whole_train_set))}, test: {int(0.8*len(whole_train_set))}")
+    # Test SCFace dataset loading
+    whole_test_set = Whole('test', data_path='dbs/SCFace', aug=False)
+    print(f"SCFace test set size: {len(whole_test_set)}")
+    
+    # Example: test with tuple dataset if needed
+    # test_set = Tuple('test', data_path='dbs/SCFace', aug=False)
+    # print(f"SCFace tuple test set size: {len(test_set)}")

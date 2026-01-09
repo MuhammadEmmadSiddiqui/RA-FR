@@ -1,91 +1,196 @@
-### Risk Controlled Image Retrieval
-Kaiwen Cai, Chris Xiaoxuan Lu, Xingyu Zhao, Wei Huang, Xiaowei Huang
+### A Step FOrward TOwards Risk Aware Facial Retrieval
+Muhammad Emmad Siddiqui, Muhammad Rafi
 
-![pic](./openfig.png)
+![pic](./Pipeline.png)
 
 ### News 🔥
 
-- 2024-12-22: Our main manuscript is available on  [arXiv](https://arxiv.org/abs/2307.07336), and the supplementary material on [GitHub](./supplementary.pdf).
-
-- 2024-12-22: The code for trainig and testing RCIR is released.
-
-- 2024-12-14: Our paper has been accepted for a poster presentation at AAAI 2025!  🎉
-
 ### Citation
 ```
-@inproceedings{cai2025risk,
-    author = {Cai, Kaiwen and Lu, Chris Xiaoxuan and Zhao, Xingyu and Huang, Wei and Huang, Xiaowei},
-    booktitle = {AAAI Conference on Artificial Intelligence}, 
-    year = {2025},
-    pages = {},
-    publisher = {},
-    title = {Risk Controlled Image Retrieval},
-}
 ```
 
 ### 0. Environment
 
-- Ubuntu 18.04
+- Ubuntu 24.04.3 LTS
 - python 3.9 + PyTorch 2.0 + CUDA 11.7
 
 ### 1. Dataset
 
-- CUB200: https://www.vision.caltech.edu/datasets/cub_200_2011/
-- CAR196: http://ai.stanford.edu/~jkrause/cars/car_dataset.html
-- Pittsburgh:
+This research utilizes two face recognition datasets:
 
-  ```
-  wget "https://www.dropbox.com/s/ynep8wzii1z0r6h/pittsburgh.zip?dl=0"
-  unzip -q pittsburgh.zip
-  ```
-- ChestX-Det:
+- IMFDB: Indian Movie Face Database
+- Surveillance Cameras Face (SCFace) database
 
-  ```
-  wget "http://resource.deepwise.com/ChestX-Det/train_data.zip"
-  wget "http://resource.deepwise.com/ChestX-Det/test_data.zip"
-  python datasets/chestx.py   # preprocessing
-  ```
+### IMFDB (Indian Movie Face Database)
 
-  Arrange folders as follow:
-  ```
-  dbs
-  ├── CAR196 (-cars_test, -cars_train, -devkit)
-  ├── chest_x_det (-all, -train, -test, -ChestX_Det_test.json, -ChestX_Det_train.json)
-  ├── CUB_200_2011 (-attributes, -images, -parts, -transformed, -bounding_boxes.txt, ..)
-  └── pitts (-database, -query, -structure, -gen_test.lst, -gen_train.lst, -gen_val.lst, ..)
-  ```
+The Indian Movie Face Database (IMFDB) is a large unconstrained face database consisting of 34,512 images of 100 Indian actors collected from more than 100 videos.
 
-### 2. Train
+**Access:** The IMFDB dataset is **publicly available** and can be downloaded from:
+[IMFDB Official Website](http://cvit.iiit.ac.in/projects/IMFDB/)
 
-```python
-py run.py train=[model] dataset=[dataset] # `[train]=triplet|mcd|btl`, `[dataset]=cub200|car196|pitts|chestx`
-e.g.,
-py run.py train=triplet dataset=cub200
+#### Data Preparation
+
+The IMFDB dataset requires preparation before training. Follow these two steps:
+
+**STEP 1: Organize Folder Structure**
+
+Organize the raw IMFDB data by:
+- Creating a unified `images/` folder
+- Extracting all face images from movie-specific folders
+- Organizing by PersonName subdirectories
+- Each person's folder contains their face images from multiple movies
+
+Run:
+```bash
+python preparation/step1_organize_folders.py --input_dir <raw_imfdb_path> --output_dir dbs/IMFDB
 ```
 
-### 3. Eval
+**STEP 2: Generate Metadata Files**
 
-```python
-py run.py train=[model] test=[model] dataset=[dataset] test.ckpt.[dataset]=[xxx.ckpt] # `[train]=[test]=triplet|mcd|btl`, `[dataset]=cub200|car196|pitts|chestx`
-e.g.,
-py run.py train=triplet test=triplet dataset=car196  test.ckpt.car196=logs_beta/triplet_car196_0608_223821/RCIR/tnn26715/checkpoints/best.ckpt
+Generate the required metadata files (`image_class_labels.txt` and `images.txt`) from the organized structure:
+- `images.txt`: Maps image IDs to relative paths (e.g., "1 PersonName/movie_frame.jpg")
+- `image_class_labels.txt`: Maps image IDs to class labels (person IDs)
+
+Run:
+```bash
+python preparation/step2_generate_metadata.py --data_dir dbs/IMFDB
 ```
 
-### 4. Apply RCIR
+After preparation, the final structure should be:
+```
+dbs
+└── IMFDB
+    ├── images/
+    │   ├── PersonName1/
+    │   │   ├── movie1_frame001.jpg
+    │   │   └── movie1_frame002.jpg
+    │   └── PersonName2/
+    │       └── movie2_frame001.jpg
+    ├── image_class_labels.txt
+    └── images.txt
+```
+
+### SCFace Database
+
+The Surveillance Cameras Face (SCFace) database is a face recognition dataset captured in uncontrolled indoor environments using surveillance cameras at various distances and angles.
+
+**Access:** The SCFace database is **not publicly available**. To obtain access, please contact the authors and request permission through the official channels at the [University of Zagreb, Faculty of Electrical Engineering and Computing](http://www.scface.org/).
+
+#### Data Preparation for SCFace
+
+SCFace evaluation is performed both with and without data preparation to demonstrate the comparative results and the dominance of preparation in improving recognition performance. The two-stage preparation pipeline addresses the challenging surveillance camera conditions and consists of:
+
+**Stage 1: Face Detection and Cropping (Combined Strategy)**
+
+Due to the large size and challenging conditions of the SCFace dataset, we employ a combined detection strategy:
+
+1. **Primary Detector - MediaPipe** ([google-ai-edge/mediapipe](https://github.com/google-ai-edge/mediapipe))
+   - Fast and efficient face detection
+   - Use for initial pass on all images
+   
+2. **Fallback Detector - MTCNN** ([ipazc/mtcnn](https://github.com/ipazc/mtcnn))
+   - Handle false negatives from MediaPipe
+   - More robust for challenging poses and lighting
+
+**Stage 2: Blind Face Restoration**
+
+Apply restoration methods based on detection results:
+
+1. **DiffBIR** ([XPixelGroup/DiffBIR](https://github.com/XPixelGroup/DiffBIR))
+   - **Aligned mode**: For successfully cropped faces from Stage 1
+   - **Unaligned mode**: For non-cropped images (detection failures)
+   - Performs Blind Image Denoising to enhance image quality
+   
+2. **InterLCM** ([sen-mao/InterLCM](https://github.com/sen-mao/InterLCM))
+   - 3-step face restoration process
+   - Apply after DiffBIR for final enhancement
+   - **`has_aligned=True`**: Use for cropped faces (aligned images from Stage 1)
+   - **`has_aligned=False`** (or omit): Use for non-cropped images (unaligned)
+
+**Workflow:**
+```bash
+# 1. Face Detection & Cropping
+# Run MediaPipe on SCFace dataset
+# Run MTCNN on MediaPipe failures
+
+# 2. Blind Face Restoration
+# Apply DiffBIR (aligned) on cropped faces
+# Apply DiffBIR (unaligned) on non-cropped images
+# Apply InterLCM 3-step restoration on all outputs
+```
+
+**Note:** The processed SCFace images can then be evaluated using models trained on IMFDB (see Section 4: Eval).
+
+
+### 2. Model Architectures
+
+This repository supports three model architectures:
+
+| Architecture | Description | Type |
+|--------------|-------------|------|
+| **R50-GeM** | ResNet50 + Generalized Mean Pooling | Baseline (from RCIR) |
+| **ViTB-DN-GeM** | Vision Transformer Base + Dino Pretrained + GeM | Proposed | **Proposed**
+| **ViTB-DN-GGeM** | Vision Transformer Base + Dino Pretrained + Group GeM | **Proposed (Main)** |
+
+To select an architecture, modify the `arch` parameter in your config files or use command-line override:
+
+```bash
+# Method 1: Edit conf/train/btl.yaml or conf/train/mcd.yaml
+arch: ViTB-DN-GGeM  # Options: R50-GeM, ViTB-DN-GeM, ViTB-DN-GGeM
+
+# Method 2: Command-line override
+py run.py train=btl dataset=imfdb train.arch=ViTB-DN-GGeM
+py run.py train=mcd dataset=imfdb train.arch=ViTB-DN-GeM
+```
+
+### 3. Train
+
+```python
+py run.py train=[model] dataset=imfdb # `[train]=mcd|btl`
+e.g.,
+py run.py train=btl dataset=imfdb
+py run.py train=btl dataset=imfdb train.arch=ViTB-DN-GGeM  # Use proposed architecture
+```
+
+### 4. Eval
+
+**IMFDB Evaluation:**
+```python
+py run.py train=[model] test=[model] dataset=imfdb test.ckpt.imfdb=[xxx.ckpt] # `[train]=[test]=mcd|btl`
+e.g.,
+py run.py train=btl test=btl dataset=imfdb test.ckpt.imfdb=logs_beta/btl_imfdb_0515_072333/RAFR/xxx/checkpoints/best.ckpt
+```
+
+**SCFace Cross-Dataset Evaluation:**
+
+To evaluate models trained on IMFDB on the SCFace dataset:
+
+1. **Preprocess SCFace** following the two-stage pipeline in Section 1 (SCFace Data Preparation)
+2. **Use IMFDB-trained checkpoint** to evaluate on preprocessed SCFace images:
+   ```python
+   # Ensure SCFace dataset is properly configured
+   py run.py train=[model] test=[model] dataset=scface test.ckpt.scface=[imfdb_trained.ckpt]
+   # e.g.,
+   py run.py train=btl test=btl dataset=scface test.ckpt.scface=logs_beta/btl_imfdb_0515_072333/RAFR/xxx/checkpoints/best.ckpt
+   ```
+
+This cross-dataset evaluation tests the model's generalization from controlled movie scenes (IMFDB) to surveillance camera conditions (SCFace).
+
+### 5. Apply RAFR
 
 (Make sure you have completed **Eval**)
 
-`dataset=cub200|car196|pitts|chestx`, you may need to modify the runs folder of each setting in `baselines_beta.json`, then run:
+You may need to modify the runs folder in `baselines.json`, then run:
 
 ```shell
 #!/bin/bash
 for i in {0..9}
 do
     cnt=$i
-    py rcir_beta.py --unc=[model] --dbs=[dataset] --cnt=$cnt --basic & 
-    # `[model]=triplet|mcd|btl|ensemble`, `[dataset]=cub200|car196|pitts|chestx`
+    py rafr.py --unc=[model] --dbs=imfdb --cnt=$cnt --basic & 
+    # `[model]=mcd|btl|ensemble`
     # e.g.,
-    # py rcir_beta.py --unc=btl --dbs=car196 --cnt=$cnt --exp1 &  
+    # py rafr.py --unc=btl --dbs=imfdb --cnt=$cnt --basic &  
 done
 wait
 ```

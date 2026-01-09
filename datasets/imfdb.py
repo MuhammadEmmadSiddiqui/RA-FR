@@ -71,14 +71,11 @@ class Base(data.Dataset):
 
         # get split indices
         if split == 'train':
-            selected_indices = np.where(image_label <= 100)[0]
+            selected_indices = np.where(image_label <= 70)[0]
         elif split == 'val':
-            # inda_ = np.where(image_label > 80)
-            # indb_ = np.where(image_label <= 100)
-            # selected_indices = np.intersect1d(inda_, indb_)
-            selected_indices = np.where(image_label > 100)[0]
+            selected_indices = np.where((image_label > 70) & (image_label <= 85))[0]
         elif split == 'test':
-            selected_indices = np.where(image_label > 100)[0]
+            selected_indices = np.where(image_label > 85)[0]
         else:
             raise NameError('undefined split')
 
@@ -212,7 +209,7 @@ class Tuple(Base):
         return self.positives
 
 if __name__ == '__main__':
-    whole_train_set = Whole('train', data_path='dbs/CUB_200_2011', aug=True)
-    train_set = Tuple('train', data_path='dbs/CUB_200_2011', aug=True)
+    whole_train_set = Whole('train', data_path='dbs/IMFDB', aug=True)
+    train_set = Tuple('train', data_path='dbs/IMFDB', aug=True)
     len(whole_train_set)
     len(train_set)

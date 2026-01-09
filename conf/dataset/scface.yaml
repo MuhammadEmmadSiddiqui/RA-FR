@@ -1,5 +1,5 @@
-dataset: cub200
-data_path: dbs/CUB_200_2011
+dataset: scface
+data_path: dbs/SCFace
 height: 224
 width: 224
 threads: 8

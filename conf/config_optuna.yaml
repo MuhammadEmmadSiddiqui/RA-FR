@@ -1,7 +1,7 @@
 defaults:
   - train: btl
   - test: btl
-  - dataset: cub200
+  - dataset: imfdb
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
   - override hydra/launcher: joblib
@@ -21,7 +21,7 @@ hydra:
     sampler:
       seed: 1234
     direction: maximize
-    study_name: rcir
+    study_name: rafr
     storage: null
     n_trials: 20
     n_jobs: 4

@@ -32,7 +32,7 @@ def run(cfg: DictConfig) -> None:
         output_dir = os.path.relpath(HydraConfig.get().runtime.output_dir)
         if cfg.train.logger_wandb:
             prefix = 'op_' if HydraConfig.get().runtime.choices["hydra/sweeper"] == "optuna" else ''
-            logger_wandb = WandbLogger(project='RCIR', name=f"{prefix}{basename(output_dir)}", save_dir=output_dir, log_model=False, offline=False)
+            logger_wandb = WandbLogger(project='RAFR', name=f"{prefix}{basename(output_dir)}", save_dir=output_dir, log_model=False, offline=False)
             logger_wandb.log_hyperparams(OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True))
             loggers.append(logger_wandb)
         if cfg.train.logger_csv:

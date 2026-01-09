@@ -1,4 +1,5 @@
 # network & loss
+arch: R50-GeM  # Options: R50-GeM (baseline), ViTB-DN-GeM, ViTB-DN-GGeM (proposed)
 setting: btl
 loss: bayesian_triplet
 margin: 0.1

@@ -1,5 +1,5 @@
-dataset: car196
-data_path: dbs/CAR196
+dataset: imfdb
+data_path: dbs/IMFDB
 height: 224
 width: 224
 threads: 8

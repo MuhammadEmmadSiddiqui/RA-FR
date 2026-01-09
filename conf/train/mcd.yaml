@@ -1,6 +1,7 @@
 # network & loss
+arch: R50-GeM  # Options: R50-GeM (baseline), ViTB-DN-GeM, ViTB-DN-GGeM (proposed)
 setting: mcd
-loss: triplet
+loss: mc_dropout
 margin: 0.1
 embedding_dim: 2048
 variance_dim: 2048
