@@ -1,0 +1,4 @@
+ckpt: 
+  imfdb: logs_beta/mcd_imfdb_0606_110733/RAFR/gsfvmpjo/checkpoints/best.ckpt
+eval_split: test
+

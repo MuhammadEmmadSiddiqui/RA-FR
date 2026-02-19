@@ -1,0 +1,6 @@
+# ckpt: logs_beta/btl_imfdb_0603_224232/RAFR/qtogdm02/checkpoints/epoch=7-step=5864.ckpt
+ckpt: 
+  imfdb: logs_beta/btl_imfdb_0606_113015/RAFR/nm9f2qj4/checkpoints/best.ckpt
+
+eval_split: test
+ 
