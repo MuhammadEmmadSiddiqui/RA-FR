@@ -4,7 +4,7 @@ Muhammad Emmad Siddiqui, Muhammad Rafi
 ![pic](./Pipeline.png)
 
 ### News 🔥
-
+* **[April 2026]**: Our paper has been accepted for the main proceedings of the **International Conference on Pattern Recognition (ICPR) 2026**, to be held in Lyon, France! 🇫🇷 
 ### Citation
 
 
